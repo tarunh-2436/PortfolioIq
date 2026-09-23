@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+yfinance
+pandas
+numpy
+scipy
+PyPortfolioOpt
+pydantic
+packaging
+google-genai
