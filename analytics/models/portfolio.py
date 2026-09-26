@@ -8,4 +8,5 @@ class Holding(BaseModel):
 
 
 class PortfolioRequest(BaseModel):
-    portfolio: List[Holding]
+    portfolio: List[Holding] = Field(..., min_length=1)
+

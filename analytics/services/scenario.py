@@ -20,45 +20,34 @@ SCENARIOS = {
 }
 
 
-def run_named_scenario(portfolio, scenario_id, portfolio_value):
-
+def run_named_scenario(portfolio: list, scenario_id: str, portfolio_value: float):
     if scenario_id not in SCENARIOS:
-
         raise ValueError(f"Unknown scenario: {scenario_id}")
 
-    scenario = SCENARIOS[scenario_id]
+    if portfolio_value <= 0:
+        raise ValueError("Portfolio value must be greater than 0.")
 
+    scenario = SCENARIOS[scenario_id]
     scenario_portfolio = []
 
     for holding in portfolio:
-
         ticker = holding["ticker"]
-        weight = holding["weight"]
-
-        shock = scenario.get("default_shock", 0)
+        weight = float(holding["weight"])
+        shock = scenario.get("default_shock", 0.0)
 
         sector_shocks = scenario.get("sector_shock", {})
-
         if sector_shocks:
-
             try:
-
                 info = get_ticker_info(ticker)
-
                 sector = info.get("sector", "Unknown")
-
                 if sector in sector_shocks:
-
                     shock = sector_shocks[sector]
-
             except Exception:
-
                 pass
 
         scenario_portfolio.append({"ticker": ticker, "weight": weight, "shock": shock})
 
     result = run_custom_scenario(scenario_portfolio, portfolio_value)
-
     result["scenario"] = {
         "id": scenario_id,
         "name": scenario["name"],
@@ -68,24 +57,21 @@ def run_named_scenario(portfolio, scenario_id, portfolio_value):
     return result
 
 
-def run_custom_scenario(portfolio, portfolio_value):
+def run_custom_scenario(portfolio: list, portfolio_value: float):
+    if portfolio_value <= 0:
+        raise ValueError("Portfolio value must be greater than 0.")
 
-    initial_value = portfolio_value
-
+    initial_value = float(portfolio_value)
     asset_results = []
-
-    total_change = 0
+    total_change = 0.0
 
     for holding in portfolio:
-
         ticker = holding["ticker"]
-        weight = holding["weight"]
-        shock = holding["shock"]
+        weight = float(holding["weight"])
+        shock = float(holding.get("shock") or 0.0)
 
         initial_asset_value = initial_value * weight
-
         change = initial_asset_value * shock
-
         final_asset_value = initial_asset_value + change
 
         total_change += change
@@ -102,8 +88,7 @@ def run_custom_scenario(portfolio, portfolio_value):
         )
 
     final_value = initial_value + total_change
-
-    percentage_change = total_change / initial_value
+    percentage_change = (total_change / initial_value) if initial_value > 0 else 0.0
 
     return {
         "initial_value": round(initial_value, 2),
@@ -115,7 +100,6 @@ def run_custom_scenario(portfolio, portfolio_value):
 
 
 def get_available_scenarios():
-
     return [
         {
             "id": scenario_id,
@@ -124,3 +108,4 @@ def get_available_scenarios():
         }
         for scenario_id, scenario in SCENARIOS.items()
     ]
+

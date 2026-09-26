@@ -12,14 +12,17 @@ venv/
 env/
 ENV/
 
-# ================================
 # Environment / Secrets
-# ================================
-
 .\analytics\.env
 .env
 .env.*
 !.env.example
+
+# Node / Dependencies
+node_modules/
+dist/
+build/
+
 
 # ================================
 # IDE / Editors

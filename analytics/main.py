@@ -1,6 +1,8 @@
-from fastapi import FastAPI, HTTPException
-
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 import numpy as np
+import logging
 
 from models.portfolio import PortfolioRequest
 from models.scenario import ScenarioRequest
@@ -18,7 +20,6 @@ from services.market_data import (
     get_daily_returns,
     get_current_prices,
 )
-
 from services.portfolio import (
     calculate_portfolio_returns,
     calculate_annualized_return,
@@ -29,17 +30,16 @@ from services.portfolio import (
     calculate_holding_returns,
     calculate_contribution,
 )
-
 from services.risk import get_market_beta, calculate_correlation_matrix
-
 from services.diversification import (
     calculate_diversification_score,
     calculate_top_holdings,
 )
-
 from services.sectors import calculate_sector_allocation
-
 from services.recommendations import calculate_health_score, generate_recommendations
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("analytics")
 
 app = FastAPI(
     title="PortfolioIQ Analytics API",
@@ -48,33 +48,50 @@ app = FastAPI(
 )
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    first_msg = errors[0].get("msg", "Invalid input data") if errors else "Invalid input data"
+    return JSONResponse(
+        status_code=400,
+        content={"detail": f"Validation error: {first_msg}"},
+    )
+
+
 @app.get("/")
 def root():
-
     return {"service": "PortfolioIQ Analytics", "status": "running"}
 
 
 @app.get("/health")
 def health():
-
     return {"status": "healthy"}
 
 
 @app.post("/analyze")
 def analyze_portfolio(request: PortfolioRequest):
-
     try:
-
         # ------------------------------------------------
-        # 1. Portfolio input
+        # 1. Portfolio input validation
         # ------------------------------------------------
+        if not request.portfolio:
+            raise HTTPException(status_code=400, detail="Portfolio cannot be empty.")
 
-        tickers = [holding.ticker.upper() for holding in request.portfolio]
+        tickers = [holding.ticker.strip().upper() for holding in request.portfolio]
 
-        weights = np.array([holding.weight for holding in request.portfolio])
+        if len(tickers) != len(set(tickers)):
+            raise HTTPException(
+                status_code=400, detail="Duplicate tickers are not allowed in portfolio."
+            )
 
-        if not np.isclose(weights.sum(), 1.0):
+        weights = np.array([holding.weight for holding in request.portfolio], dtype=float)
 
+        if any(w <= 0 for w in weights):
+            raise HTTPException(
+                status_code=400, detail="All portfolio weights must be greater than 0."
+            )
+
+        if not np.isclose(weights.sum(), 1.0, atol=1e-3):
             raise HTTPException(
                 status_code=400, detail="Portfolio weights must sum to 1.0"
             )
@@ -87,45 +104,27 @@ def analyze_portfolio(request: PortfolioRequest):
         # ------------------------------------------------
         # 2. Historical market data
         # ------------------------------------------------
-
-        prices = get_historical_prices(tickers)
-
-        prices = prices.dropna(axis=1, how="all")
-
-        missing = [ticker for ticker in tickers if ticker not in prices.columns]
-
-        if missing:
-
-            raise HTTPException(
-                status_code=400, detail=("Market data unavailable for: " f"{missing}")
-            )
-
-        prices = prices[tickers]
+        try:
+            prices = get_historical_prices(tickers)
+        except ValueError as ve:
+            raise HTTPException(status_code=400, detail=str(ve))
 
         returns = get_daily_returns(prices)
 
         # ------------------------------------------------
         # 3. Portfolio returns
         # ------------------------------------------------
-
         portfolio_returns = calculate_portfolio_returns(returns, weights)
-
         annual_return = calculate_annualized_return(portfolio_returns)
-
         volatility = calculate_volatility(portfolio_returns)
-
         sharpe = calculate_sharpe_ratio(annual_return, volatility)
-
         max_drawdown = calculate_max_drawdown(portfolio_returns)
-
         beta = get_market_beta(portfolio_returns)
 
         # ------------------------------------------------
         # 4. Portfolio value history
         # ------------------------------------------------
-
         portfolio_values = calculate_cumulative_values(portfolio_returns)
-
         performance = [
             {"date": date.strftime("%Y-%m-%d"), "value": round(float(value), 2)}
             for date, value in portfolio_values.items()
@@ -134,51 +133,40 @@ def analyze_portfolio(request: PortfolioRequest):
         # ------------------------------------------------
         # 5. Holding analysis
         # ------------------------------------------------
-
         holding_returns = calculate_holding_returns(prices)
-
         weight_dict = {
             ticker: float(weight) for ticker, weight in zip(tickers, weights)
         }
-
         contributions = calculate_contribution(holding_returns, weight_dict)
-
         current_prices = get_current_prices(tickers)
 
         holdings_analysis = []
-
         for ticker in tickers:
-
+            cp = current_prices.get(ticker)
             holdings_analysis.append(
                 {
                     "ticker": ticker,
                     "weight": round(weight_dict[ticker] * 100, 2),
-                    "current_price": round(current_prices.get(ticker, 0), 2),
-                    "period_return": round(holding_returns.get(ticker, 0) * 100, 2),
-                    "contribution": round(contributions.get(ticker, 0) * 100, 2),
+                    "current_price": round(float(cp), 2) if cp is not None else None,
+                    "period_return": round(holding_returns.get(ticker, 0.0) * 100, 2),
+                    "contribution": round(contributions.get(ticker, 0.0) * 100, 2),
                 }
             )
 
         # ------------------------------------------------
         # 6. Diversification
         # ------------------------------------------------
-
         diversification_score = calculate_diversification_score(weights.tolist())
-
         top_holdings = calculate_top_holdings(portfolio)
-
         sector_allocation = calculate_sector_allocation(portfolio)
-
         correlation_matrix = calculate_correlation_matrix(returns)
 
         # ------------------------------------------------
-        # 7. Health
+        # 7. Health & Recommendations
         # ------------------------------------------------
-
         health_score = calculate_health_score(
             diversification_score, volatility, sharpe, max_drawdown
         )
-
         recommendations = generate_recommendations(
             diversification_score,
             volatility,
@@ -191,7 +179,6 @@ def analyze_portfolio(request: PortfolioRequest):
         # ------------------------------------------------
         # 8. Build quantitative result
         # ------------------------------------------------
-
         result = {
             "portfolio": portfolio,
             "metrics": {
@@ -210,16 +197,13 @@ def analyze_portfolio(request: PortfolioRequest):
             "performance": performance,
             "holdings": holdings_analysis,
             "correlation": correlation_matrix,
-            # Existing deterministic Python recommendations
             "recommendations": recommendations,
         }
 
         # ------------------------------------------------
-        # 9. Generate AI insights
+        # 9. Generate AI insights (must never break /analyze)
         # ------------------------------------------------
-
         try:
-
             ai_input = {
                 "metrics": result["metrics"],
                 "diversification": result["diversification"],
@@ -227,62 +211,63 @@ def analyze_portfolio(request: PortfolioRequest):
                 "holdings": result["holdings"],
                 "correlation": result["correlation"],
             }
-
             result["ai"] = generate_explanation(ai_input)
-
         except Exception as e:
-
-            # AI failure should never break quantitative analytics
+            logger.warning(f"AI explanation failed: {e}")
             result["ai"] = {
                 "available": False,
                 "analysis": None,
+                "model": None,
                 "error": str(e),
             }
-
-        # ------------------------------------------------
-        # 10. Final response
-        # ------------------------------------------------
 
         return result
 
     except HTTPException:
         raise
-
     except Exception as e:
-
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in /analyze: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal analysis engine error.")
 
 
 @app.get("/scenario/types")
 def scenario_types():
-
     return {"scenarios": get_available_scenarios()}
 
 
 @app.post("/scenario")
 def scenario_analysis(request: ScenarioRequest):
-
     try:
+        if not request.portfolio:
+            raise HTTPException(status_code=400, detail="Portfolio cannot be empty.")
+
+        if request.portfolio_value <= 0:
+            raise HTTPException(
+                status_code=400, detail="Portfolio value must be greater than 0."
+            )
+
+        tickers = [h.ticker.strip().upper() for h in request.portfolio]
+        if len(tickers) != len(set(tickers)):
+            raise HTTPException(
+                status_code=400, detail="Duplicate tickers are not allowed."
+            )
 
         weights = [holding.weight for holding in request.portfolio]
-
-        if not np.isclose(sum(weights), 1.0):
-
+        if not np.isclose(sum(weights), 1.0, atol=1e-3):
             raise HTTPException(
                 status_code=400, detail="Portfolio weights must sum to 1.0"
             )
 
         portfolio = [
             {
-                "ticker": holding.ticker.upper(),
+                "ticker": holding.ticker.strip().upper(),
                 "weight": holding.weight,
-                "shock": holding.shock or 0,
+                "shock": holding.shock if holding.shock is not None else 0.0,
             }
             for holding in request.portfolio
         ]
 
         if request.scenario:
-
             return run_named_scenario(
                 portfolio, request.scenario, request.portfolio_value
             )
@@ -291,42 +276,43 @@ def scenario_analysis(request: ScenarioRequest):
 
     except HTTPException:
         raise
-
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in /scenario: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal scenario engine error.")
 
 
 @app.post("/optimize")
 def optimize(request: OptimizationRequest):
-
     try:
-
-        if len(request.tickers) < 2:
-
+        if not request.tickers or len(request.tickers) < 2:
             raise HTTPException(
                 status_code=400, detail="At least two tickers are required."
             )
 
-        tickers = [ticker.upper() for ticker in request.tickers]
+        tickers = [ticker.strip().upper() for ticker in request.tickers]
+        if len(tickers) != len(set(tickers)):
+            raise HTTPException(
+                status_code=400, detail="Duplicate tickers in optimization request."
+            )
 
         return optimize_portfolio(tickers)
 
     except HTTPException:
         raise
-
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in /optimize: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal optimization engine error.")
 
 
 @app.post("/explain")
 def explain_portfolio(request: dict):
-
     try:
-        result = generate_explanation(request)
-
-        return result
-
+        return generate_explanation(request)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in /explain: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal explanation engine error.")
+
