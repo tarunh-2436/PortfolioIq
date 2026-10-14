@@ -173,10 +173,11 @@ def test_scenario_custom():
         "/scenario",
         json={
             "portfolio": [
-                {"ticker": "AAPL", "weight": 0.5, "shock": -0.10},
-                {"ticker": "MSFT", "weight": 0.5, "shock": 0.20},
+                {"ticker": "AAPL", "weight": 0.5},  # Technology
+                {"ticker": "JPM", "weight": 0.5},   # Financials
             ],
             "portfolio_value": 100000,
+            "domain_shocks": {"Technology": -0.10, "Financials": 0.20},
         },
     )
     assert response.status_code == 200

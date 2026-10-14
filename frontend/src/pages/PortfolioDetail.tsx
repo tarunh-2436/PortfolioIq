@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { portfolioApi } from '../services/api';
 import { Portfolio, Holding } from '../types';
+import { TickerSearch } from '../components/TickerSearch';
 import {
   ArrowLeft,
   Plus,
@@ -30,8 +31,11 @@ export const PortfolioDetail: React.FC = () => {
   const [weightPercent, setWeightPercent] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [notice, setNotice] = useState('');
 
   const navigate = useNavigate();
+
+  const TICKER_RE = /^[A-Z0-9^][A-Z0-9.\-=&^]{0,19}$/;
 
   useEffect(() => {
     fetchPortfolio();
@@ -54,26 +58,55 @@ export const PortfolioDetail: React.FC = () => {
     return portfolio.holdings.reduce((sum, h) => sum + Number(h.weight), 0) * 100;
   };
 
+  // Share of the portfolio still unallocated (in %), never below zero
+  const remainingPercent = () => Math.max(0, 100 - calculateTotalWeight());
+
+  const closeAddModal = () => {
+    setShowAddModal(false);
+    setTicker('');
+    setWeightPercent('');
+    setError('');
+  };
+
   const handleAddHolding = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const weightVal = parseFloat(weightPercent) / 100;
+    const symbol = ticker.trim().toUpperCase();
+    const weightPct = parseFloat(weightPercent);
 
-    if (!ticker.trim()) {
-      setError('Please enter a valid stock ticker.');
+    if (!symbol) {
+      setError('Search for a company and pick a result, or type a ticker symbol.');
       return;
     }
-    if (isNaN(weightVal) || weightVal <= 0 || weightVal > 1) {
+    if (!TICKER_RE.test(symbol)) {
+      setError('Ticker may only contain letters, numbers and . - = & ^ (e.g. AAPL or RELIANCE.NS).');
+      return;
+    }
+    if (!Number.isFinite(weightPct) || weightPct <= 0 || weightPct > 100) {
       setError('Allocation weight must be greater than 0% and at most 100%.');
+      return;
+    }
+    if (weightPct > remainingPercent() + 0.05) {
+      setError(
+        `Only ${remainingPercent().toFixed(2)}% of the portfolio is still unallocated. Lower this weight or reduce another holding first.`
+      );
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await portfolioApi.addHolding(portfolioId, ticker.trim().toUpperCase(), weightVal);
-      setShowAddModal(false);
-      setTicker('');
-      setWeightPercent('');
+      const { resolved } = await portfolioApi.addHolding(portfolioId, symbol, weightPct / 100);
+      closeAddModal();
+      if (resolved?.changed) {
+        const detail = [resolved.name, resolved.exchange].filter(Boolean).join(' \u00b7 ');
+        setNotice(
+          `Added as ${resolved.symbol}${detail ? ` (${detail})` : ''} - the exchange was chosen automatically.`
+        );
+      } else if (resolved?.unverified) {
+        setNotice(`${resolved.symbol} was added, but the ticker could not be verified right now.`);
+      } else {
+        setNotice('');
+      }
       fetchPortfolio();
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to add holding.');
@@ -86,16 +119,21 @@ export const PortfolioDetail: React.FC = () => {
     e.preventDefault();
     if (!selectedHolding || !selectedHolding.id) return;
     setError('');
-    const weightVal = parseFloat(weightPercent) / 100;
+    const weightPct = parseFloat(weightPercent);
+    const maxAllowed = remainingPercent() + Number(selectedHolding.weight) * 100;
 
-    if (isNaN(weightVal) || weightVal <= 0 || weightVal > 1) {
-      setError('Allocation weight must be between 0% and 100%.');
+    if (!Number.isFinite(weightPct) || weightPct <= 0 || weightPct > 100) {
+      setError('Allocation weight must be greater than 0% and at most 100%.');
+      return;
+    }
+    if (weightPct > maxAllowed + 0.05) {
+      setError(`The most this holding can have is ${maxAllowed.toFixed(2)}% (total allocation cannot exceed 100%).`);
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await portfolioApi.updateHolding(portfolioId, selectedHolding.id, weightVal);
+      await portfolioApi.updateHolding(portfolioId, selectedHolding.id, weightPct / 100);
       setShowEditModal(false);
       setSelectedHolding(null);
       setWeightPercent('');
@@ -207,13 +245,22 @@ export const PortfolioDetail: React.FC = () => {
           </div>
         </div>
         <button
-          onClick={() => setShowAddModal(true)}
+          onClick={() => { setError(''); setShowAddModal(true); }}
           className="inline-flex items-center space-x-1 px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-semibold rounded-md shadow-sm hover:bg-gray-50"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>Add Holding</span>
         </button>
       </div>
+
+      {notice && (
+        <div className="p-3 rounded-lg border border-sky-200 bg-sky-50 text-sky-800 text-sm mb-6 flex items-start justify-between">
+          <span>{notice}</span>
+          <button onClick={() => setNotice('')} className="ml-3 text-sky-600 hover:text-sky-800 text-xs font-semibold">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Holdings Table */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -255,6 +302,7 @@ export const PortfolioDetail: React.FC = () => {
                       <td className="px-6 py-4 text-right space-x-2">
                         <button
                           onClick={() => {
+                            setError('');
                             setSelectedHolding(h);
                             setWeightPercent((Number(h.weight) * 100).toString());
                             setShowEditModal(true);
@@ -282,7 +330,7 @@ export const PortfolioDetail: React.FC = () => {
           <div className="p-12 text-center">
             <p className="text-gray-500 text-sm">No holdings added to this portfolio yet.</p>
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={() => { setError(''); setShowAddModal(true); }}
               className="mt-4 inline-flex items-center space-x-2 px-4 py-2 bg-sky-600 text-white text-sm font-medium rounded-lg hover:bg-sky-700"
             >
               <Plus className="w-4 h-4" />
@@ -305,35 +353,42 @@ export const PortfolioDetail: React.FC = () => {
             )}
 
             <form onSubmit={handleAddHolding} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Stock Ticker Symbol</label>
-                <input
-                  type="text"
-                  required
-                  value={ticker}
-                  onChange={(e) => setTicker(e.target.value.toUpperCase())}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-sky-500 uppercase"
-                  placeholder="e.g. AAPL, NVDA, MSFT"
-                />
-              </div>
+              <TickerSearch value={ticker} onChange={(symbol) => setTicker(symbol)} autoFocus />
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">Weight Allocation (%)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  required
-                  value={weightPercent}
-                  onChange={(e) => setWeightPercent(e.target.value)}
-                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-sky-500"
-                  placeholder="e.g. 25.0"
-                />
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700">Weight Allocation (%)</label>
+                  <span className="text-xs text-gray-500">
+                    Unallocated: <strong>{remainingPercent().toFixed(2)}%</strong>
+                  </span>
+                </div>
+                <div className="mt-1 flex space-x-2">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max={Math.max(0.01, remainingPercent())}
+                    required
+                    value={weightPercent}
+                    onChange={(e) => setWeightPercent(e.target.value)}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-sky-500"
+                    placeholder="e.g. 25.0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setWeightPercent(remainingPercent().toFixed(2))}
+                    disabled={remainingPercent() <= 0}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-xs font-medium text-gray-700 hover:bg-gray-50 whitespace-nowrap disabled:opacity-50"
+                  >
+                    Use remaining
+                  </button>
+                </div>
               </div>
 
               <div className="flex justify-end space-x-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={closeAddModal}
                   className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
                 >
                   Cancel
@@ -367,10 +422,14 @@ export const PortfolioDetail: React.FC = () => {
 
             <form onSubmit={handleEditHolding} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Weight Allocation (%)</label>
+                <label className="block text-sm font-medium text-gray-700">
+                  Weight Allocation (%) - up to {(remainingPercent() + Number(selectedHolding.weight) * 100).toFixed(2)}%
+                </label>
                 <input
                   type="number"
                   step="0.01"
+                  min="0.01"
+                  max={remainingPercent() + Number(selectedHolding.weight) * 100}
                   required
                   value={weightPercent}
                   onChange={(e) => setWeightPercent(e.target.value)}

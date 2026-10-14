@@ -1,19 +1,25 @@
 const db = require('../config/db');
 const { hashPassword, comparePassword, generateToken } = require('../utils/auth');
+const { LIMITS, parseText, parseEmail, parsePassword } = require('../utils/validation');
 
 async function register(req, res) {
   try {
-    const { name, email, password } = req.body;
+    const { name: rawName, email: rawEmail, password: rawPassword } = req.body || {};
 
-    if (!name || !email || !password) {
+    if (!rawName || !rawEmail || !rawPassword) {
       return res.status(400).json({ error: 'Name, email, and password are required.' });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
-    }
+    const nameCheck = parseText(rawName, 'Name', LIMITS.name);
+    if (nameCheck.error) return res.status(400).json({ error: nameCheck.error });
+    const emailCheck = parseEmail(rawEmail);
+    if (emailCheck.error) return res.status(400).json({ error: emailCheck.error });
+    const passwordCheck = parsePassword(rawPassword);
+    if (passwordCheck.error) return res.status(400).json({ error: passwordCheck.error });
 
-    const normalizedEmail = email.toLowerCase().trim();
+    const name = nameCheck.value;
+    const password = passwordCheck.value;
+    const normalizedEmail = emailCheck.value;
 
     // Check if user exists
     const existing = await db.query('SELECT id FROM users WHERE email = $1', [normalizedEmail]);
@@ -24,7 +30,7 @@ async function register(req, res) {
     const passwordHash = await hashPassword(password);
     const result = await db.query(
       'INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name, email, created_at',
-      [name.trim(), normalizedEmail, passwordHash]
+      [name, normalizedEmail, passwordHash]
     );
 
     const user = result.rows[0];
@@ -43,10 +49,13 @@ async function register(req, res) {
 
 async function login(req, res) {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
+    }
+    if (typeof email !== 'string' || typeof password !== 'string') {
+      return res.status(400).json({ error: 'Email and password must be text.' });
     }
 
     const normalizedEmail = email.toLowerCase().trim();

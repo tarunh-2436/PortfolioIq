@@ -7,9 +7,12 @@ import {
   ScenarioResult,
   OptimizationResult,
   ScenarioType,
+  PortfolioDomain,
+  TickerSearchResult,
+  AddHoldingResult,
 } from '../types';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 
 const api = axios.create({
@@ -44,6 +47,17 @@ export const authApi = {
   },
 };
 
+// Market data (ticker search / validation)
+export const marketApi = {
+  search: async (q: string, region: string = 'auto', signal?: AbortSignal) => {
+    const res = await api.get<{ results: TickerSearchResult[] }>('/market/search', {
+      params: { q, region },
+      signal,
+    });
+    return res.data.results;
+  },
+};
+
 // Portfolio Services
 export const portfolioApi = {
   getPortfolios: async () => {
@@ -67,8 +81,8 @@ export const portfolioApi = {
     return res.data;
   },
   addHolding: async (portfolioId: number, ticker: string, weight: number) => {
-    const res = await api.post<{ holding: Holding }>(`/portfolios/${portfolioId}/holdings`, { ticker, weight });
-    return res.data.holding;
+    const res = await api.post<AddHoldingResult>(`/portfolios/${portfolioId}/holdings`, { ticker, weight });
+    return res.data;
   },
   updateHolding: async (portfolioId: number, holdingId: number, weight: number) => {
     const res = await api.put<{ holding: Holding }>(`/portfolios/${portfolioId}/holdings/${holdingId}`, { weight });
@@ -90,6 +104,7 @@ export const analyticsApi = {
     portfolioId: number,
     scenario?: string,
     portfolioValue: number = 1000000,
+    /** Custom shock per domain as fractions, e.g. { Technology: -0.2 } */
     customShocks?: Record<string, number>
   ) => {
     const res = await api.post<ScenarioResult>(`/portfolios/${portfolioId}/scenario`, {
@@ -102,6 +117,10 @@ export const analyticsApi = {
   optimizePortfolio: async (portfolioId: number, tickers?: string[]) => {
     const res = await api.post<OptimizationResult>(`/portfolios/${portfolioId}/optimize`, { tickers });
     return res.data;
+  },
+  getDomains: async (portfolioId: number) => {
+    const res = await api.get<{ domains: PortfolioDomain[] }>(`/portfolios/${portfolioId}/domains`);
+    return res.data.domains;
   },
   getScenarioTypes: async () => {
     const res = await api.get<{ scenarios: ScenarioType[] }>('/scenarios/types');

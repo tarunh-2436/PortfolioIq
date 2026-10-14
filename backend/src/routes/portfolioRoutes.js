@@ -23,6 +23,7 @@ router.delete('/:id/holdings/:holdingId', portfolioController.deleteHolding);
 router.post('/:id/analyze', analyticsController.analyzePortfolioEndpoint);
 router.post('/:id/scenario', analyticsController.scenarioEndpoint);
 router.post('/:id/optimize', analyticsController.optimizeEndpoint);
+router.get('/:id/domains', analyticsController.domainsEndpoint);
 
 module.exports = router;
 

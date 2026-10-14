@@ -14,9 +14,18 @@ export const Login: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    const cleanEmail = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (!password) {
+      setError('Please enter your password.');
+      return;
+    }
     setIsSubmitting(true);
     try {
-      await login(email, password);
+      await login(cleanEmail, password);
       navigate('/portfolios');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Invalid credentials. Please try again.');
@@ -46,7 +55,7 @@ export const Login: React.FC = () => {
             </div>
           )}
 
-          <form className="space-y-6" onSubmit={handleSubmit}>
+          <form className="space-y-6" onSubmit={handleSubmit} noValidate>
             <div>
               <label className="block text-sm font-medium text-slate-300">Email address</label>
               <div className="mt-1 relative">

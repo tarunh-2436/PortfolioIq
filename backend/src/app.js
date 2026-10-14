@@ -4,6 +4,7 @@ require('dotenv').config();
 
 const authRoutes = require('./routes/authRoutes');
 const portfolioRoutes = require('./routes/portfolioRoutes');
+const marketRoutes = require('./routes/marketRoutes');
 const { getScenarioTypesEndpoint } = require('./controllers/analyticsController');
 
 const app = express();
@@ -17,6 +18,7 @@ app.use(express.json());
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/portfolios', portfolioRoutes);
+app.use('/api/market', marketRoutes);
 
 // Public scenario types endpoint for frontend dropdowns
 app.get('/api/scenarios/types', getScenarioTypesEndpoint);

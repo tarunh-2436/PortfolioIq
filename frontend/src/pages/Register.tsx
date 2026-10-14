@@ -15,9 +15,27 @@ export const Register: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    const cleanName = name.trim();
+    const cleanEmail = email.trim();
+    if (cleanName.length < 2 || cleanName.length > 100) {
+      setError('Name must be between 2 and 100 characters.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      return;
+    }
+    if (password.length > 128) {
+      setError('Password must be at most 128 characters long.');
+      return;
+    }
     setIsSubmitting(true);
     try {
-      await register(name, email, password);
+      await register(cleanName, cleanEmail, password);
       navigate('/portfolios');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Registration failed. Please try again.');
@@ -45,7 +63,7 @@ export const Register: React.FC = () => {
             </div>
           )}
 
-          <form className="space-y-6" onSubmit={handleSubmit}>
+          <form className="space-y-6" onSubmit={handleSubmit} noValidate>
             <div>
               <label className="block text-sm font-medium text-slate-300">Full Name</label>
               <div className="mt-1 relative">

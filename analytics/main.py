@@ -1,14 +1,16 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 import numpy as np
 import logging
 
 from models.portfolio import PortfolioRequest
-from models.scenario import ScenarioRequest
+from models.scenario import ScenarioRequest, ClassifyRequest
 from models.optimization import OptimizationRequest
 
-from services.explanation import generate_explanation
+from services.explanation import generate_explanation, generate_optimization_narrative
+from services.domains import group_by_domain, DOMAINS
+from services.symbols import search_symbols, resolve_symbol, SymbolNotFound
 from services.optimization import optimize_portfolio
 from services.scenario import (
     run_custom_scenario,
@@ -16,6 +18,7 @@ from services.scenario import (
     get_available_scenarios,
 )
 from services.market_data import (
+    MarketDataUnavailable,
     get_historical_prices,
     get_daily_returns,
     get_current_prices,
@@ -225,6 +228,8 @@ def analyze_portfolio(request: PortfolioRequest):
 
     except HTTPException:
         raise
+    except MarketDataUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.error(f"Error in /analyze: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal analysis engine error.")
@@ -259,11 +264,7 @@ def scenario_analysis(request: ScenarioRequest):
             )
 
         portfolio = [
-            {
-                "ticker": holding.ticker.strip().upper(),
-                "weight": holding.weight,
-                "shock": holding.shock if holding.shock is not None else 0.0,
-            }
+            {"ticker": holding.ticker.strip().upper(), "weight": holding.weight}
             for holding in request.portfolio
         ]
 
@@ -272,7 +273,15 @@ def scenario_analysis(request: ScenarioRequest):
                 portfolio, request.scenario, request.portfolio_value
             )
 
-        return run_custom_scenario(portfolio, request.portfolio_value)
+        if not request.domain_shocks:
+            raise HTTPException(
+                status_code=400,
+                detail="Select a scenario or provide at least one domain shock.",
+            )
+
+        return run_custom_scenario(
+            portfolio, request.portfolio_value, request.domain_shocks
+        )
 
     except HTTPException:
         raise
@@ -297,15 +306,76 @@ def optimize(request: OptimizationRequest):
                 status_code=400, detail="Duplicate tickers in optimization request."
             )
 
-        return optimize_portfolio(tickers)
+        current = None
+        if request.current_weights:
+            current = {
+                k.strip().upper(): float(v) for k, v in request.current_weights.items()
+            }
+
+        result = optimize_portfolio(tickers, current)
+
+        # Optional LLM commentary - the rule-based explanation is always present
+        if request.include_ai:
+            try:
+                result["ai"] = generate_optimization_narrative(result)
+            except Exception as e:
+                logger.warning(f"Optimization narrative failed: {e}")
+                result["ai"] = {"available": False, "analysis": None, "model": None,
+                                "error": "LLM unavailable: AI commentary could not be generated right now."}
+        return result
 
     except HTTPException:
         raise
+    except MarketDataUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error(f"Error in /optimize: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal optimization engine error.")
+
+
+@app.get("/search")
+def search(
+    q: str = Query(..., min_length=1, max_length=60),
+    region: str = Query("auto", pattern="^(auto|us|india|global)$"),
+    limit: int = Query(8, ge=1, le=15),
+):
+    """Find tickers by company name or symbol."""
+    try:
+        return {"results": search_symbols(q, region, limit)}
+    except Exception as e:
+        logger.error(f"Error in /search: {e}", exc_info=True)
+        raise HTTPException(status_code=502, detail="Ticker search is temporarily unavailable.")
+
+
+@app.get("/resolve")
+def resolve(symbol: str = Query(..., min_length=1, max_length=30)):
+    """Validate a ticker and pick the right exchange automatically."""
+    try:
+        return resolve_symbol(symbol)
+    except SymbolNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ConnectionError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error in /resolve: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not validate ticker.")
+
+
+@app.get("/domains")
+def domains():
+    return {"domains": DOMAINS}
+
+
+@app.post("/classify")
+def classify(request: ClassifyRequest):
+    """Group holdings into investment domains with their combined weights."""
+    portfolio = [
+        {"ticker": h.ticker.strip().upper(), "weight": h.weight}
+        for h in request.portfolio
+    ]
+    return {"domains": group_by_domain(portfolio)}
 
 
 @app.post("/explain")

@@ -177,7 +177,7 @@ export const Dashboard: React.FC = () => {
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Sector Breakdown</h3>
+              <h3 className="text-lg font-bold text-gray-900">Domain Breakdown</h3>
               <span className="text-xs font-semibold px-2.5 py-1 bg-sky-50 text-sky-700 rounded-full">
                 Diversification: {diversification.score}/100
               </span>
@@ -342,9 +342,14 @@ export const Dashboard: React.FC = () => {
               </div>
             ) : (
               <div className="p-4 bg-slate-800/60 rounded-lg text-slate-400 text-xs leading-relaxed border border-slate-700/50">
-                <p>Gemini AI interpretation is currently unavailable.</p>
-                {ai?.error && <p className="mt-1 text-rose-400 font-mono text-[11px]">{ai.error}</p>}
-                <p className="mt-2 text-slate-400">Quantitative metrics above remain 100% accurate and independent.</p>
+                <p className="font-semibold text-slate-300">LLM unavailable</p>
+                <p className="mt-1">
+                  {(ai?.error || '').replace(/^LLM unavailable:\s*/, '') ||
+                    'AI commentary could not be generated right now. Please try again in a minute.'}
+                </p>
+                <p className="mt-2 text-slate-400">
+                  All quantitative metrics, charts and recommendations on this page are calculated independently and remain accurate.
+                </p>
               </div>
             )}
           </div>

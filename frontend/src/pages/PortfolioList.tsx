@@ -33,12 +33,19 @@ export const PortfolioList: React.FC = () => {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    const cleanName = name.trim();
+    if (cleanName.length < 1 || cleanName.length > 100) {
+      setError('Portfolio name is required (max 100 characters).');
+      return;
+    }
+    if (description.trim().length > 500) {
+      setError('Description must be at most 500 characters.');
+      return;
+    }
     setIsSubmitting(true);
     try {
-      const newP = await portfolioApi.createPortfolio(name, description, [
-        { ticker: 'AAPL', weight: 0.5 },
-        { ticker: 'MSFT', weight: 0.5 },
-      ]);
+      // Start empty: holdings are added (searched by company name) on the next screen
+      const newP = await portfolioApi.createPortfolio(cleanName, description.trim() || undefined);
       setShowModal(false);
       setName('');
       setDescription('');
@@ -162,6 +169,7 @@ export const PortfolioList: React.FC = () => {
                 <input
                   type="text"
                   required
+                  maxLength={100}
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
@@ -172,6 +180,7 @@ export const PortfolioList: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700">Description (Optional)</label>
                 <textarea
+                  maxLength={500}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
