@@ -57,7 +57,8 @@ COOLDOWN_TIMEOUT = 60
 COOLDOWN_EMPTY = 30
 
 UNAVAILABLE_MESSAGE = (
-    "LLM unavailable: AI commentary could not be generated right now. "
+    "LLM unavailable: Gemini is temporarily unavailable due to high traffic, so AI commentary "
+    "could not be generated right now. "
     "All calculated analytics are still accurate and shown."
 )
 

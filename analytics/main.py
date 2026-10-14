@@ -321,7 +321,7 @@ def optimize(request: OptimizationRequest):
             except Exception as e:
                 logger.warning(f"Optimization narrative failed: {e}")
                 result["ai"] = {"available": False, "analysis": None, "model": None,
-                                "error": "LLM unavailable: AI commentary could not be generated right now."}
+                                "error": "LLM unavailable: Gemini is temporarily unavailable due to high traffic, so AI commentary could not be generated right now."}
         return result
 
     except HTTPException:

@@ -325,10 +325,11 @@ export const Optimizer: React.FC = () => {
                   <p className="text-xs text-slate-300 whitespace-pre-line leading-relaxed">{result.ai.analysis}</p>
                 ) : (
                   <div className="p-3 bg-slate-800/60 rounded-lg text-slate-400 text-xs leading-relaxed border border-slate-700/50">
-                    <p className="font-semibold text-slate-300">LLM unavailable</p>
+                    <p className="font-semibold text-slate-300">Gemini temporarily unavailable</p>
                     <p className="mt-1">
-                      AI commentary could not be generated right now. The allocation and the explanation above are calculated
-                      directly from your price data and are unaffected.
+                      {(result.ai?.error || '').replace(/^LLM unavailable:\s*/, '') ||
+                        'Gemini is temporarily unavailable due to high traffic. Please try again in a minute.'}{' '}
+                      The allocation and the explanation above are calculated directly from your price data and are unaffected.
                     </p>
                   </div>
                 )}

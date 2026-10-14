@@ -342,10 +342,10 @@ export const Dashboard: React.FC = () => {
               </div>
             ) : (
               <div className="p-4 bg-slate-800/60 rounded-lg text-slate-400 text-xs leading-relaxed border border-slate-700/50">
-                <p className="font-semibold text-slate-300">LLM unavailable</p>
+                <p className="font-semibold text-slate-300">Gemini temporarily unavailable</p>
                 <p className="mt-1">
                   {(ai?.error || '').replace(/^LLM unavailable:\s*/, '') ||
-                    'AI commentary could not be generated right now. Please try again in a minute.'}
+                    'Gemini is temporarily unavailable due to high traffic. Please try again in a minute.'}
                 </p>
                 <p className="mt-2 text-slate-400">
                   All quantitative metrics, charts and recommendations on this page are calculated independently and remain accurate.
