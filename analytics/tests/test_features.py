@@ -23,7 +23,7 @@ client = TestClient(app)
 # Domain scenarios
 # ---------------------------------------------------------------------------
 
-def test_scenario_groups_holdings_by_domain():
+def test_scenario_reports_company_impact_from_domain_shocks():
     response = client.post(
         "/scenario",
         json={
@@ -38,11 +38,11 @@ def test_scenario_groups_holdings_by_domain():
     )
     assert response.status_code == 200
     data = response.json()
-    assert "assets" not in data  # tickers are not exposed, only domains
-    domains = {d["domain"]: d for d in data["domains"]}
-    assert domains["Technology"]["holdings_count"] == 2
-    assert domains["Technology"]["weight"] == 60.0
-    assert domains["Defense & Aerospace"]["shock"] > 0  # defense benefits from conflict
+    companies = {company["ticker"]: company for company in data["companies"]}
+    assert companies["AAPL"]["domain"] == "Technology"
+    assert companies["AAPL"]["weight"] == 30.0
+    assert companies["LMT"]["domain"] == "Defense & Aerospace"
+    assert companies["LMT"]["shock"] > 0  # defense benefits from conflict
     assert data["insights"]
 
 
@@ -56,9 +56,9 @@ def test_scenario_custom_domain_shocks_only_touch_listed_domains():
         },
     )
     assert response.status_code == 200
-    domains = {d["domain"]: d for d in response.json()["domains"]}
-    assert domains["Technology"]["change"] == -5000
-    assert domains["Financials"]["change"] == 0
+    companies = {company["ticker"]: company for company in response.json()["companies"]}
+    assert companies["AAPL"]["change"] == -5000
+    assert companies["JPM"]["change"] == 0
 
 
 def test_scenario_rejects_unknown_domain_and_bad_shock():

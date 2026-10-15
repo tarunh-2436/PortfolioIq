@@ -134,7 +134,7 @@ export const ScenarioSimulator: React.FC = () => {
   };
 
   // Largest absolute impact, used to scale the impact bars
-  const maxImpact = result ? Math.max(0.01, ...result.domains.map((d) => Math.abs(d.impact))) : 1;
+  const maxImpact = result ? Math.max(0.01, ...result.companies.map((company) => Math.abs(company.impact))) : 1;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -146,8 +146,7 @@ export const ScenarioSimulator: React.FC = () => {
         </Link>
         <h1 className="text-3xl font-extrabold text-gray-900">Portfolio Stress Scenario Simulator</h1>
         <p className="text-gray-500 text-sm mt-1">
-          See how each investment domain (Technology, Defense, Energy, ...) reacts to market crashes, rate shocks and
-          geopolitical events.
+          Set stress inputs by investment domain, then see the impact on every company in your portfolio.
         </p>
       </div>
 
@@ -391,10 +390,10 @@ export const ScenarioSimulator: React.FC = () => {
                 </div>
               )}
 
-              {/* Per Domain Impact Table */}
+              {/* Per Company Impact Table */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-gray-900">Impact by Domain</h3>
+                  <h3 className="text-lg font-bold text-gray-900">Impact by Company</h3>
                   {result.scenario && (
                     <span className="text-xs font-semibold px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-full">
                       {result.scenario.name}
@@ -405,6 +404,7 @@ export const ScenarioSimulator: React.FC = () => {
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase">
+                        <th className="px-6 py-3">Company</th>
                         <th className="px-6 py-3">Domain</th>
                         <th className="px-6 py-3">Allocation</th>
                         <th className="px-6 py-3">Shock</th>
@@ -415,14 +415,12 @@ export const ScenarioSimulator: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 text-sm">
-                      {result.domains.map((d) => (
-                        <tr key={d.domain} className="hover:bg-gray-50/50">
+                      {result.companies.map((d) => (
+                        <tr key={d.ticker} className="hover:bg-gray-50/50">
                           <td className="px-6 py-4">
-                            <div className="font-bold text-gray-900">{d.domain}</div>
-                            <div className="text-[11px] text-gray-400">
-                              {d.holdings_count} {d.holdings_count === 1 ? 'holding' : 'holdings'}
-                            </div>
+                            <div className="font-bold text-gray-900">{d.ticker}</div>
                           </td>
+                          <td className="px-6 py-4 text-gray-700">{d.domain}</td>
                           <td className="px-6 py-4 text-gray-700">{d.weight}%</td>
                           <td className={`px-6 py-4 font-semibold ${d.shock >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                             {signed(d.shock)}

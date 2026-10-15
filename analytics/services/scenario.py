@@ -1,4 +1,4 @@
-"""Domain-level scenario simulation.
+"""Company-level scenario simulation using domain-level inputs.
 
 Holdings are classified into domains (Technology, Defense & Aerospace, ...).
 A scenario is a set of return shocks per domain; the portfolio impact is the
@@ -6,7 +6,7 @@ weighted sum. Shock figures are *illustrative assumptions* loosely modelled on
 historical episodes - they are stress-test inputs, not forecasts.
 """
 
-from .domains import DOMAINS, group_by_domain
+from .domains import DOMAINS, classify_tickers
 
 MAX_SHOCK = 5.0     # +500%
 MIN_SHOCK = -1.0    # -100% (cannot lose more than everything)
@@ -217,24 +217,26 @@ def _validate_shocks(shocks: dict) -> dict:
     return cleaned
 
 
-def _impact_by_domain(portfolio: list, portfolio_value: float, shock_for) -> dict:
-    """Core calculation shared by named and custom scenarios."""
-    groups = group_by_domain(portfolio)
+def _impact_by_company(portfolio: list, portfolio_value: float, shock_for) -> dict:
+    """Apply domain-derived shocks to each individual portfolio company."""
+    domains_by_ticker = classify_tickers([holding["ticker"] for holding in portfolio])
     initial_value = float(portfolio_value)
-    domain_results = []
+    company_results = []
     total_change = 0.0
 
-    for g in groups:
-        weight = g["weight"]
-        shock = float(shock_for(g["domain"]))
+    for holding in portfolio:
+        ticker = holding["ticker"].strip().upper()
+        domain = domains_by_ticker[ticker]
+        weight = float(holding["weight"])
+        shock = float(shock_for(domain))
         initial = initial_value * weight
         change = initial * shock
         total_change += change
-        domain_results.append(
+        company_results.append(
             {
-                "domain": g["domain"],
+                "ticker": ticker,
+                "domain": domain,
                 "weight": round(weight * 100, 2),
-                "holdings_count": g["holdings_count"],
                 "shock": round(shock * 100, 2),
                 "initial_value": round(initial, 2),
                 "change": round(change, 2),
@@ -245,17 +247,19 @@ def _impact_by_domain(portfolio: list, portfolio_value: float, shock_for) -> dic
     final_value = initial_value + total_change
     pct = (total_change / initial_value) if initial_value > 0 else 0.0
 
-    # Percentage-point effect of each domain on total portfolio return
-    for r in domain_results:
+    # Percentage-point effect of each company on total portfolio return
+    for r in company_results:
         r["impact"] = round(r["change"] / initial_value * 100, 2) if initial_value > 0 else 0.0
+
+    company_results.sort(key=lambda company: abs(company["change"]), reverse=True)
 
     return {
         "initial_value": round(initial_value, 2),
         "final_value": round(final_value, 2),
         "absolute_change": round(total_change, 2),
         "percentage_change": round(pct * 100, 2),
-        "domains": domain_results,
-        "insights": _build_insights(domain_results, total_change, pct),
+        "companies": company_results,
+        "insights": _build_insights(company_results, total_change, pct),
     }
 
 
@@ -263,12 +267,12 @@ def _money(value: float) -> str:
     return f"{'-' if value < 0 else '+'}${abs(value):,.0f}"
 
 
-def _build_insights(domains: list, total_change: float, pct: float) -> list:
+def _build_insights(companies: list, total_change: float, pct: float) -> list:
     insights = []
-    if not domains:
+    if not companies:
         return insights
 
-    by_change = sorted(domains, key=lambda d: d["change"])
+    by_change = sorted(companies, key=lambda d: d["change"])
     worst, best = by_change[0], by_change[-1]
 
     if total_change < 0:
@@ -283,30 +287,30 @@ def _build_insights(domains: list, total_change: float, pct: float) -> list:
         insights.append("The portfolio would be essentially unchanged under this scenario.")
 
     if worst["change"] < 0:
-        gross_loss = sum(d["change"] for d in domains if d["change"] < 0)
+        gross_loss = sum(d["change"] for d in companies if d["change"] < 0)
         share = worst["change"] / gross_loss * 100 if gross_loss else 0.0
-        extra = f", {share:.0f}% of all domain losses" if len(domains) > 1 else ""
+        extra = f", {share:.0f}% of all company losses" if len(companies) > 1 else ""
         insights.append(
-            f"Biggest drag: {worst['domain']} ({worst['shock']:+.1f}% on a {worst['weight']:.1f}% allocation, "
+            f"Biggest drag: {worst['ticker']} ({worst['shock']:+.1f}% {worst['domain']} shock on a {worst['weight']:.1f}% allocation, "
             f"{_money(worst['change'])}{extra})."
         )
     if best["change"] > 0:
         insights.append(
-            f"Biggest cushion: {best['domain']} ({best['shock']:+.1f}% on a {best['weight']:.1f}% allocation, "
+            f"Biggest cushion: {best['ticker']} ({best['shock']:+.1f}% {best['domain']} shock on a {best['weight']:.1f}% allocation, "
             f"{_money(best['change'])})."
         )
 
-    top = max(domains, key=lambda d: d["weight"])
-    if top["weight"] >= 50 and len(domains) > 1:
+    top = max(companies, key=lambda d: d["weight"])
+    if top["weight"] >= 50 and len(companies) > 1:
         insights.append(
-            f"{top['domain']} makes up {top['weight']:.0f}% of the portfolio, so results depend heavily on that single domain."
+            f"{top['ticker']} makes up {top['weight']:.0f}% of the portfolio, so results depend heavily on that single company."
         )
-    if len(domains) == 1:
-        insights.append("All holdings fall in one domain, so there is no diversification across domains.")
-    other = next((d for d in domains if d["domain"] == "Other"), None)
-    if other and other["weight"] >= 10:
+    if len(companies) == 1:
+        insights.append("This portfolio contains one company, so there is no company-level diversification.")
+    other_weight = sum(company["weight"] for company in companies if company["domain"] == "Other")
+    if other_weight >= 10:
         insights.append(
-            f"{other['weight']:.0f}% of the portfolio could not be classified into a domain and uses the scenario default."
+            f"{other_weight:.0f}% of the portfolio could not be classified into a domain and uses the scenario default."
         )
     return insights
 
@@ -319,7 +323,7 @@ def run_named_scenario(portfolio: list, scenario_id: str, portfolio_value: float
 
     scenario = SCENARIOS[scenario_id]
     shocks = scenario["domain_shocks"]
-    result = _impact_by_domain(portfolio, portfolio_value, lambda d: shocks.get(d, 0.0))
+    result = _impact_by_company(portfolio, portfolio_value, lambda d: shocks.get(d, 0.0))
     result["scenario"] = {
         "id": scenario_id,
         "name": scenario["name"],
@@ -335,7 +339,7 @@ def run_custom_scenario(portfolio: list, portfolio_value: float, domain_shocks: 
     if portfolio_value <= 0:
         raise ValueError("Portfolio value must be greater than 0.")
     shocks = _validate_shocks(domain_shocks or {})
-    result = _impact_by_domain(portfolio, portfolio_value, lambda d: shocks.get(d, 0.0))
+    result = _impact_by_company(portfolio, portfolio_value, lambda d: shocks.get(d, 0.0))
     result["scenario"] = {
         "id": "custom",
         "name": "Custom Domain Shocks",

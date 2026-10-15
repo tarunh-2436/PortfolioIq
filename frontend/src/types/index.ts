@@ -86,10 +86,10 @@ export interface AnalyticsResponse {
   ai?: AIAnalysis;
 }
 
-export interface DomainImpact {
+export interface CompanyImpact {
+  ticker: string;
   domain: string;
   weight: number;
-  holdings_count: number;
   shock: number;
   initial_value: number;
   change: number;
@@ -103,7 +103,7 @@ export interface ScenarioResult {
   final_value: number;
   absolute_change: number;
   percentage_change: number;
-  domains: DomainImpact[];
+  companies: CompanyImpact[];
   insights: string[];
   scenario?: {
     id: string;
