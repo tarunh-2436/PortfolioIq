@@ -6,6 +6,8 @@
   automatically picking the right exchange (US, NSE/BSE India, other markets).
 """
 
+from __future__ import annotations
+
 import logging
 import re
 import threading

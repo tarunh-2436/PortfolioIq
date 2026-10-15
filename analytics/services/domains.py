@@ -7,6 +7,8 @@ per ticker. Classification order:
   3. "Other"
 """
 
+from __future__ import annotations
+
 import logging
 from concurrent.futures import ThreadPoolExecutor
 

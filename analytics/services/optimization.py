@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 from pypfopt import EfficientFrontier, risk_models, expected_returns
 

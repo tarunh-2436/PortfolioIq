@@ -18,6 +18,8 @@ Reliability measures:
   * response cache - identical prompts are answered from memory
 """
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import os

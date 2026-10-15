@@ -6,6 +6,8 @@ weighted sum. Shock figures are *illustrative assumptions* loosely modelled on
 historical episodes - they are stress-test inputs, not forecasts.
 """
 
+from __future__ import annotations
+
 from .domains import DOMAINS, classify_tickers
 
 MAX_SHOCK = 5.0     # +500%
