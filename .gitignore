@@ -97,3 +97,7 @@ cache/
 credentials.json
 service-account*.json
 .neon
+
+# Neon CLI agent tooling (not needed to run the app)
+.agents/
+skills-lock.json
