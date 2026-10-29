@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "node --watch src/app.js",
+    "db:init": "node scripts/initDb.js",
     "test": "jest --detectOpenHandles"
   },
   "dependencies": {

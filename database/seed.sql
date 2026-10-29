@@ -1,8 +1,8 @@
 -- PortfolioIQ Seed Data for Development / Testing
 
--- Demo user (Password: "password123", bcrypt hash: $2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy)
+-- Demo user (Password: "password123", bcrypt hash: $2a$10$Z83TBcQGbpZQD6hckKbDy.shNX9CFfZ97jwXW.5jFxfQJ7aE/Frry)
 INSERT INTO users (id, name, email, password_hash)
-VALUES (1, 'Demo Investor', 'demo@portfolioiq.com', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy')
+VALUES (1, 'Demo Investor', 'demo@portfolioiq.com', '$2a$10$Z83TBcQGbpZQD6hckKbDy.shNX9CFfZ97jwXW.5jFxfQJ7aE/Frry')
 ON CONFLICT (id) DO NOTHING;
 
 -- Demo Portfolio

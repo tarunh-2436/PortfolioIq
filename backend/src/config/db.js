@@ -2,18 +2,33 @@ const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
+// Cloud Postgres (Neon, Supabase, RDS, ...) is configured with a single DATABASE_URL.
+// Individual DB_* variables are still supported for a local Postgres.
+const databaseUrl = process.env.DATABASE_URL;
+const sslEnabled = process.env.DB_SSL
+  ? process.env.DB_SSL === 'true'
+  : Boolean(databaseUrl) && !/localhost|127\.0\.0\.1/.test(databaseUrl);
+
 const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  database: process.env.DB_NAME || 'portfolioiq',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
+  ...(databaseUrl
+    ? { connectionString: databaseUrl }
+    : {
+        host: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '5432', 10),
+        database: process.env.DB_NAME || 'portfolioiq',
+        user: process.env.DB_USER || 'postgres',
+        password: process.env.DB_PASSWORD || 'postgres',
+      }),
+  ssl: sslEnabled ? { rejectUnauthorized: false } : false,
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 1500,
+  connectionTimeoutMillis: databaseUrl ? 10000 : 1500,
 });
 
 // In-Memory Database Store Fallback (used when PostgreSQL is not running)
+// Disabled when a cloud DATABASE_URL is set, so a connection problem surfaces as an error
+// instead of silently losing data.
+const allowInMemoryFallback = !databaseUrl && process.env.ALLOW_IN_MEMORY_FALLBACK !== 'false';
 let useInMemory = false;
 
 const memoryStore = {
@@ -22,7 +37,7 @@ const memoryStore = {
       id: 1,
       name: 'Demo Investor',
       email: 'demo@portfolioiq.com',
-      password_hash: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', // password123
+      password_hash: '$2a$10$Z83TBcQGbpZQD6hckKbDy.shNX9CFfZ97jwXW.5jFxfQJ7aE/Frry', // password123
       created_at: new Date().toISOString(),
     },
   ],
@@ -212,7 +227,7 @@ async function query(text, params) {
   try {
     return await pool.query(text, params);
   } catch (err) {
-    if (err.code === 'ECONNREFUSED' || err.message.includes('connect ECONNREFUSED')) {
+    if (allowInMemoryFallback && (err.code === 'ECONNREFUSED' || err.message.includes('connect ECONNREFUSED'))) {
       if (!useInMemory) {
         console.warn('⚠️  PostgreSQL connection refused. Automatically switching to in-memory database store.');
         useInMemory = true;
@@ -237,7 +252,7 @@ module.exports = {
         const client = await pool.connect();
         return client;
       } catch (err) {
-        if (err.code === 'ECONNREFUSED' || err.message.includes('connect ECONNREFUSED')) {
+        if (allowInMemoryFallback && (err.code === 'ECONNREFUSED' || err.message.includes('connect ECONNREFUSED'))) {
           if (!useInMemory) {
             console.warn('⚠️  PostgreSQL connection refused. Automatically switching to in-memory database store.');
             useInMemory = true;
