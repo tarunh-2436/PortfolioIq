@@ -11,8 +11,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
   Cell,
   BarChart,
   Bar,
@@ -27,13 +25,15 @@ import {
   Shield,
   AlertOctagon,
   Sparkles,
-  PieChart as PieIcon,
   RefreshCw,
   AlertTriangle,
   Lightbulb,
 } from 'lucide-react';
-
-const tooltipStyle = { backgroundColor: '#0f172a', borderRadius: '8px', color: '#fff', fontSize: '13px' };
+import { tooltipStyle } from '../components/charts/chartTheme';
+import { PortfolioPerformanceChart } from '../components/charts/PortfolioPerformanceChart';
+import { AllocationDonut } from '../components/charts/AllocationDonut';
+import { HoldingsPerformanceChart } from '../components/charts/HoldingsPerformanceChart';
+import { CorrelationHeatmap } from '../components/charts/CorrelationHeatmap';
 
 /** Derives extra chart series from the daily portfolio value history. */
 function deriveSeries(performance: { date: string; value: number }[]) {
@@ -83,8 +83,6 @@ function deriveSeries(performance: { date: string; value: number }[]) {
 
   return { drawdown, rollingVol, histogram, monthly };
 }
-
-const COLORS = ['#0284c7', '#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6'];
 
 export const Dashboard: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -150,11 +148,14 @@ export const Dashboard: React.FC = () => {
     contribution: h.contribution,
   }));
 
-  // Sector chart data format
+  // Allocation chart data (all values are already percentages)
   const sectorData = Object.entries(diversification.sector_allocation || {}).map(([sector, pct]) => ({
     name: sector,
     value: pct,
   }));
+  const assetData = holdings.length
+    ? holdings.map((h) => ({ name: h.ticker, value: h.weight }))
+    : (analytics.portfolio || []).map((p) => ({ name: p.ticker, value: p.weight * 100 }));
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
@@ -210,71 +211,34 @@ export const Dashboard: React.FC = () => {
 
       {/* Main Charts & Allocation Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Cumulative Performance History */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-gray-900">Historical Value Growth ($1M base)</h3>
-            <span className="text-xs text-gray-400 font-medium">1 Year Daily Trailing</span>
-          </div>
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={performance}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                <YAxis
-                  tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-                  domain={['auto', 'auto']}
-                  tick={{ fontSize: 12 }}
-                  stroke="#94a3b8"
-                />
-                <Tooltip
-                  formatter={(value: any) => [`$${Number(value).toLocaleString()}`, 'Portfolio Value']}
-                  contentStyle={{ backgroundColor: '#0f172a', borderRadius: '8px', color: '#fff', fontSize: '13px' }}
-                />
-                <Line type="monotone" dataKey="value" stroke="#0284c7" strokeWidth={2.5} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        <PortfolioPerformanceChart performance={performance} />
 
-        {/* Sector Allocation Breakdown */}
-        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-900">Domain Breakdown</h3>
-              <span className="text-xs font-semibold px-2.5 py-1 bg-sky-50 text-sky-700 rounded-full">
-                Diversification: {diversification.score}/100
-              </span>
-            </div>
-            <div className="h-52 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={sectorData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="value">
-                    {sectorData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(val: any) => [`${val}%`, 'Allocation']} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-          <div className="space-y-1.5 mt-4 text-xs">
-            {sectorData.map((item, idx) => (
-              <div key={item.name} className="flex items-center justify-between">
-                <span className="flex items-center space-x-2">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }}></span>
-                  <span className="text-gray-700 font-medium">{item.name}</span>
-                </span>
-                <span className="font-semibold text-gray-900">{item.value}%</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <AllocationDonut
+          title="Asset Allocation"
+          items={assetData}
+          centerLabel={`${assetData.length} ${assetData.length === 1 ? 'holding' : 'holdings'}`}
+          emptyMessage="This portfolio has no holdings to chart."
+          footnote="Target weights as saved in the portfolio."
+        />
       </div>
 
       {/* Additional Analytics Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <AllocationDonut
+          title="Domain Breakdown"
+          items={sectorData}
+          centerLabel={`${sectorData.length} ${sectorData.length === 1 ? 'domain' : 'domains'}`}
+          concentrationThreshold={40}
+          badge={
+            <span className="text-xs font-semibold px-2.5 py-1 bg-sky-50 text-sky-700 rounded-full">
+              Diversification: {diversification.score}/100
+            </span>
+          }
+          emptyMessage="Domain classification is unavailable for these holdings."
+        />
+
+        <HoldingsPerformanceChart holdings={holdings} />
+
         {/* Drawdown */}
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
           <div className="flex items-center justify-between mb-4">
@@ -357,29 +321,8 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Holding Returns */}
-        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">1Y Return by Holding</h3>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={holdingBars}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="ticker" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                <Tooltip formatter={(v: any) => [`${v}%`, '1Y Return']} contentStyle={tooltipStyle} />
-                <ReferenceLine y={0} stroke="#94a3b8" />
-                <Bar dataKey="period_return" radius={[4, 4, 0, 0]}>
-                  {holdingBars.map((h, i) => (
-                    <Cell key={i} fill={h.period_return >= 0 ? '#10b981' : '#f43f5e'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
         {/* Contribution vs Weight */}
-        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+        <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
           <h3 className="text-lg font-bold text-gray-900 mb-4">Weight vs Return Contribution</h3>
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -435,43 +378,7 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* Correlation Matrix */}
-      <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-        <h3 className="text-lg font-bold text-gray-900 mb-4">Correlation Matrix</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-center border-collapse">
-            <thead>
-              <tr>
-                <th className="p-2 text-xs font-bold text-gray-400 uppercase text-left">Asset</th>
-                {Object.keys(correlation).map((t) => (
-                  <th key={t} className="p-2 text-xs font-bold text-gray-700">{t}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(correlation).map(([rowTicker, rowObj]) => (
-                <tr key={rowTicker} className="border-t border-gray-100">
-                  <td className="p-2 text-xs font-bold text-gray-900 text-left">{rowTicker}</td>
-                  {Object.entries(rowObj).map(([colTicker, corrVal]) => {
-                    const bg =
-                      rowTicker === colTicker
-                        ? 'bg-slate-100 font-bold'
-                        : corrVal > 0.7
-                        ? 'bg-rose-50 text-rose-700 font-semibold'
-                        : corrVal < 0.3
-                        ? 'bg-emerald-50 text-emerald-700 font-semibold'
-                        : 'bg-gray-50 text-gray-700';
-                    return (
-                      <td key={colTicker} className={`p-2.5 text-xs rounded-md ${bg}`}>
-                        {corrVal.toFixed(2)}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <CorrelationHeatmap correlation={correlation} />
 
       {/* Recommendations & Gemini AI Insights */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

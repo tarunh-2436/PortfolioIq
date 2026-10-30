@@ -14,11 +14,14 @@ import {
   ChevronRight,
   ArrowRight,
 } from 'lucide-react';
+import { AllocationComparisonChart, MetricComparisonChart } from '../components/charts/OptimizationComparisonChart';
+import { RiskReturnChart } from '../components/charts/RiskReturnChart';
+import { PRIMARY } from '../components/charts/chartTheme';
 
 const TICKER_RE = /^[A-Z0-9^][A-Z0-9.\-=&^]{0,19}$/;
 const MAX_TICKERS = 50;
 
-type Tab = 'allocation' | 'explanation' | 'ai';
+type Tab = 'charts' | 'allocation' | 'explanation' | 'ai';
 
 const ACTION_STYLE: Record<string, string> = {
   Add: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -49,7 +52,7 @@ export const Optimizer: React.FC = () => {
   const [result, setResult] = useState<OptimizationResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<Tab>('allocation');
+  const [tab, setTab] = useState<Tab>('charts');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -81,7 +84,7 @@ export const Optimizer: React.FC = () => {
     try {
       const res = await analyticsApi.optimizePortfolio(portfolioId, tickers);
       setResult(res);
-      setTab('allocation');
+      setTab('charts');
       setExpanded(new Set());
     } catch (err: any) {
       setError(err.response?.data?.error || err.message || 'Failed to optimize portfolio.');
@@ -126,6 +129,7 @@ export const Optimizer: React.FC = () => {
   const noteCount = explanation?.notes?.length ?? 0;
 
   const TABS: { id: Tab; label: string; badge?: string }[] = [
+    { id: 'charts', label: 'Charts' },
     { id: 'allocation', label: 'Allocation' },
     { id: 'explanation', label: 'Explanation', badge: noteCount > 0 ? String(noteCount) : undefined },
     { id: 'ai', label: 'AI Commentary', badge: aiReady ? undefined : '!' },
@@ -261,6 +265,44 @@ export const Optimizer: React.FC = () => {
                     </button>
                   ))}
                 </div>
+
+                {/* Charts tab: allocation shift, metric comparison and risk/return map */}
+                {tab === 'charts' && (
+                  <div className="p-4 space-y-4 bg-gray-50/60">
+                    <p className="text-xs text-gray-500">
+                      Optimizer output is an estimate from the trailing 1Y price history and a suggestion only; your saved portfolio is unchanged.
+                    </p>
+                    <AllocationComparisonChart result={result} />
+                    <MetricComparisonChart result={result} />
+                    {explanation?.assets && (
+                      <RiskReturnChart
+                        title="Risk vs Return Map"
+                        assets={explanation.assets.map((a) => ({
+                          label: a.ticker,
+                          volatility: a.volatility,
+                          annual_return: a.annual_return,
+                          sharpe_ratio: a.sharpe_ratio,
+                          weight: a.optimal_weight,
+                        }))}
+                        highlights={[
+                          {
+                            name: 'Current portfolio',
+                            color: '#0f172a',
+                            point: result.current
+                              ? { label: 'Current portfolio', volatility: result.current.volatility, annual_return: result.current.expected_return, sharpe_ratio: result.current.sharpe_ratio }
+                              : null,
+                          },
+                          {
+                            name: 'Optimized portfolio',
+                            color: PRIMARY,
+                            point: { label: 'Optimized portfolio', volatility: result.volatility, annual_return: result.expected_return, sharpe_ratio: result.sharpe_ratio },
+                          },
+                        ]}
+                        footnote="X axis: annualised volatility of daily returns. Y axis: annualised historical return (CAGR). Grey points are the individual assets; all values are in-sample estimates over the same 1Y window, not forecasts."
+                      />
+                    )}
+                  </div>
+                )}
 
                 {/* Allocation tab: compact table, click a row for its reasons */}
                 {tab === 'allocation' && (

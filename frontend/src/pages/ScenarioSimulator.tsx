@@ -3,10 +3,12 @@ import { useParams, Link } from 'react-router-dom';
 import { analyticsApi, portfolioApi } from '../services/api';
 import { Portfolio, PortfolioDomain, ScenarioResult, ScenarioType } from '../types';
 import { ArrowLeft, Sliders, Play, AlertCircle, Lightbulb, RotateCcw } from 'lucide-react';
+import { ScenarioComparisonChart, ScenarioImpactChart, ScenarioRun } from '../components/charts/ScenarioImpactChart';
 
 const MIN_SHOCK_PCT = -100;
 const MAX_SHOCK_PCT = 500;
 const MAX_VALUE = 1e12;
+const MAX_RUNS = 10;
 
 const money = (v: number) => `${v < 0 ? '-' : ''}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const signed = (v: number, digits = 1) => `${v >= 0 ? '+' : ''}${v.toFixed(digits)}%`;
@@ -36,8 +38,13 @@ export const ScenarioSimulator: React.FC = () => {
   const [result, setResult] = useState<ScenarioResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Results run during this visit, for side-by-side comparison
+  const [runs, setRuns] = useState<ScenarioRun[]>([]);
+  const [activeRun, setActiveRun] = useState<string>();
 
   useEffect(() => {
+    setRuns([]);
+    setResult(null);
     loadInitial();
   }, [portfolioId]);
 
@@ -126,6 +133,18 @@ export const ScenarioSimulator: React.FC = () => {
         custom
       );
       setResult(res);
+
+      // Named scenarios replace their previous run; each custom run is kept separately
+      const customCount = runs.filter((r) => r.key.startsWith('custom-')).length;
+      const run: ScenarioRun = {
+        key: mode === 'named' ? `named-${selectedScenario}` : `custom-${customCount + 1}`,
+        label: mode === 'named' ? res.scenario?.name || activeScenario?.name || selectedScenario : `Custom shocks #${customCount + 1}`,
+        percentage_change: res.percentage_change,
+        absolute_change: res.absolute_change,
+        initial_value: res.initial_value,
+      };
+      setRuns((prev) => [...prev.filter((r) => r.key !== run.key), run].slice(-MAX_RUNS));
+      setActiveRun(run.key);
     } catch (err: any) {
       setError(err.response?.data?.error || err.message || 'Failed to simulate scenario.');
     } finally {
@@ -389,6 +408,10 @@ export const ScenarioSimulator: React.FC = () => {
                   </ul>
                 </div>
               )}
+
+              {/* Charts */}
+              <ScenarioImpactChart result={result} />
+              <ScenarioComparisonChart runs={runs} activeKey={activeRun} />
 
               {/* Per Company Impact Table */}
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
