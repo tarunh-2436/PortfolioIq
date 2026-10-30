@@ -14,6 +14,11 @@ import {
   PieChart,
   Pie,
   Cell,
+  BarChart,
+  Bar,
+  AreaChart,
+  Area,
+  ReferenceLine,
 } from 'recharts';
 import {
   ArrowLeft,
@@ -27,6 +32,57 @@ import {
   AlertTriangle,
   Lightbulb,
 } from 'lucide-react';
+
+const tooltipStyle = { backgroundColor: '#0f172a', borderRadius: '8px', color: '#fff', fontSize: '13px' };
+
+/** Derives extra chart series from the daily portfolio value history. */
+function deriveSeries(performance: { date: string; value: number }[]) {
+  const returns = performance.slice(1).map((p, i) => ({
+    date: p.date,
+    ret: performance[i].value > 0 ? (p.value / performance[i].value - 1) * 100 : 0,
+  }));
+
+  // Drawdown from the running peak
+  let peak = -Infinity;
+  const drawdown = performance.map((p) => {
+    peak = Math.max(peak, p.value);
+    return { date: p.date, drawdown: peak > 0 ? +(((p.value - peak) / peak) * 100).toFixed(2) : 0 };
+  });
+
+  // Rolling 30-day annualised volatility
+  const WINDOW = 30;
+  const rollingVol = returns.slice(WINDOW - 1).map((r, i) => {
+    const w = returns.slice(i, i + WINDOW).map((x) => x.ret / 100);
+    const mean = w.reduce((a, b) => a + b, 0) / w.length;
+    const variance = w.reduce((a, b) => a + (b - mean) ** 2, 0) / (w.length - 1);
+    return { date: r.date, vol: +(Math.sqrt(variance) * Math.sqrt(252) * 100).toFixed(2) };
+  });
+
+  // Histogram of daily returns (0.5% buckets)
+  const buckets: Record<string, number> = {};
+  returns.forEach((r) => {
+    const key = (Math.floor(r.ret / 0.5) * 0.5).toFixed(1);
+    buckets[key] = (buckets[key] || 0) + 1;
+  });
+  const histogram = Object.entries(buckets)
+    .map(([bucket, count]) => ({ bucket: `${Number(bucket) >= 0 ? '+' : ''}${bucket}%`, start: Number(bucket), count }))
+    .sort((a, b) => a.start - b.start);
+
+  // Monthly returns
+  const byMonth = new Map<string, { first: number; last: number }>();
+  performance.forEach((p, i) => {
+    const m = String(p.date).slice(0, 7);
+    const entry = byMonth.get(m);
+    if (!entry) byMonth.set(m, { first: i > 0 ? performance[i - 1].value : p.value, last: p.value });
+    else entry.last = p.value;
+  });
+  const monthly = Array.from(byMonth.entries()).map(([month, v]) => ({
+    month,
+    ret: v.first > 0 ? +((v.last / v.first - 1) * 100).toFixed(2) : 0,
+  }));
+
+  return { drawdown, rollingVol, histogram, monthly };
+}
 
 const COLORS = ['#0284c7', '#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6'];
 
@@ -85,6 +141,14 @@ export const Dashboard: React.FC = () => {
   }
 
   const { metrics, diversification, health, performance, holdings, correlation, recommendations, ai } = analytics;
+
+  const { drawdown, rollingVol, histogram, monthly } = deriveSeries(performance || []);
+  const holdingBars = holdings.map((h) => ({
+    ticker: h.ticker,
+    weight: h.weight,
+    period_return: h.period_return,
+    contribution: h.contribution,
+  }));
 
   // Sector chart data format
   const sectorData = Object.entries(diversification.sector_allocation || {}).map(([sector, pct]) => ({
@@ -205,6 +269,130 @@ export const Dashboard: React.FC = () => {
                 <span className="font-semibold text-gray-900">{item.value}%</span>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Additional Analytics Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Drawdown */}
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-gray-900">Drawdown (Underwater Chart)</h3>
+            <span className="text-xs text-gray-400 font-medium">Decline from peak</span>
+          </div>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={drawdown}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#94a3b8" minTickGap={40} />
+                <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <Tooltip formatter={(v: any) => [`${v}%`, 'Drawdown']} contentStyle={tooltipStyle} />
+                <Area type="monotone" dataKey="drawdown" stroke="#e11d48" fill="#fecdd3" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Rolling Volatility */}
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-gray-900">Rolling 30-Day Volatility</h3>
+            <span className="text-xs text-gray-400 font-medium">Annualised</span>
+          </div>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={rollingVol}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="#94a3b8" minTickGap={40} />
+                <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <Tooltip formatter={(v: any) => [`${v}%`, 'Volatility']} contentStyle={tooltipStyle} />
+                <Line type="monotone" dataKey="vol" stroke="#6366f1" strokeWidth={2.5} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Monthly Returns */}
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Monthly Returns</h3>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={monthly}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <Tooltip formatter={(v: any) => [`${v}%`, 'Return']} contentStyle={tooltipStyle} />
+                <ReferenceLine y={0} stroke="#94a3b8" />
+                <Bar dataKey="ret" radius={[4, 4, 0, 0]}>
+                  {monthly.map((m, i) => (
+                    <Cell key={i} fill={m.ret >= 0 ? '#10b981' : '#f43f5e'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Daily Return Distribution */}
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold text-gray-900">Daily Return Distribution</h3>
+            <span className="text-xs text-gray-400 font-medium">Days per return bucket</span>
+          </div>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={histogram}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="bucket" tick={{ fontSize: 10 }} stroke="#94a3b8" interval="preserveStartEnd" />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <Tooltip formatter={(v: any) => [v, 'Days']} contentStyle={tooltipStyle} />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                  {histogram.map((h, i) => (
+                    <Cell key={i} fill={h.start >= 0 ? '#0284c7' : '#f59e0b'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Holding Returns */}
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+          <h3 className="text-lg font-bold text-gray-900 mb-4">1Y Return by Holding</h3>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={holdingBars}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="ticker" tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <Tooltip formatter={(v: any) => [`${v}%`, '1Y Return']} contentStyle={tooltipStyle} />
+                <ReferenceLine y={0} stroke="#94a3b8" />
+                <Bar dataKey="period_return" radius={[4, 4, 0, 0]}>
+                  {holdingBars.map((h, i) => (
+                    <Cell key={i} fill={h.period_return >= 0 ? '#10b981' : '#f43f5e'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Contribution vs Weight */}
+        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Weight vs Return Contribution</h3>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={holdingBars}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="ticker" tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <Tooltip formatter={(v: any, name: any) => [`${v}%`, name]} contentStyle={tooltipStyle} />
+                <ReferenceLine y={0} stroke="#94a3b8" />
+                <Bar dataKey="weight" name="Weight" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="contribution" name="Return Contribution" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
